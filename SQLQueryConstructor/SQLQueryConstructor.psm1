@@ -267,13 +267,13 @@ $modulePath = (Get-Module -ListAvailable SQLQueryConstructor).path
 $serverInfo =  import-csv ($modulePath.Substring(0,$modulePath.LastIndexOf("\")) + "\Config\serverInfo.csv")
 
 $e = $Global:error.count
-Import-Module SqlServers
+Import-Module SqlServer
 if($e -lt $Global:error.Count)
 {
     write-host "WARNING: missing SqlServer module (used with t-sql)" -BackgroundColor Yellow -ForegroundColor Black 
 }
 $e = $Global:error.count
-Import-Module PSSQLites
+Import-Module PSSQLite
 if($e -lt $Global:error.Count)
 {
     write-host "WARNING: missing PSSQLite module (used with sqlite)" -BackgroundColor Yellow -ForegroundColor Black 
