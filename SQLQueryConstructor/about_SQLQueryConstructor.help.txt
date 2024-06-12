@@ -1,0 +1,128 @@
+NAME
+    SQLQueryConstructor
+
+SYNOPSIS
+    This module holds useful functions for database interoperability with t-sql and sqlite. Uses the SQlServer module and/or the PSSQLite module
+
+OVERVIEW
+    Config:
+        for t-sql, set the appropriate ServerInstance and Database in the "serverInfo.csv" in the Config folder
+    Functions:
+        "sql" constructs the "Invoke-SqlCmd" statement with paramters from "serverInfo.csv" in the config file
+            params:
+                -query [string]: a SQL query
+            returns:
+                a "DataRow" object containing the result of the query
+        "Get-AGSqliteTableConnection" validates that the SQLite file and specified table exist. Returns true or false and writes a message to the console
+            params:
+                -databasePath [string]: takes full path to sqlite file.
+	            -databaseTable [string]: takes table name
+            returns:
+               $true or $false
+        "Get-AGColumnNames" gets the column and primary key names for either a t-sql or sqlite table. Defaults to t-sql, set -lite $true for sqlite.
+            params:
+                -tableName [string]: table name to get information from
+                -dbName [string]: path to sqlite database file
+                -lite [bool]: if the info is needed for a sqlite database
+            returns:
+                a hash table where the keys and values are 
+                    columnNames = a list of column names
+                    primaryKeys = a list of primary column names
+        "Get-AGIfNotExistsStatement" Checks if a record exists based on the supplied primary keys and primary key values
+            params:
+                -valueHash @{}: a hash table where the key is the primary key and the value is the pk value
+                -primaryKeys @(): a list of the primary keys of the table
+                -tableName: the table name
+            returns:
+                a string in the form of "IF NOT EXISTS(SELECT * FROM $tableName WHERE $primaryKey1 = $primaryKey1Value AND $primaryKey1 = $primaryKey1Value)"
+            notes:
+                -used for t-sql
+                -created as a "private" module function
+        "Get-AGInsertStatementBuilder" Creates an insert statement for a given table from a hash table of values. Insert statement is wrapped in an if statement checking if the value is not yet in the table
+            params:
+                -valueHash @{}: a hash table where the key is the column name and the value is the column's value
+                -tableName [string]: table name to get information from
+                -dbName [string]: path to sqlite database file if needed
+                -lite [bool]: if the info is needed for a sqlite database
+            returns:
+                a custom object with properties:
+                    columns: string in the form (columnA, columnB)
+                    values: string in the form ('valueA', 'valueB')
+                    insert: the actual insert statement wrapped in the if statement
+                    rawInsert: the insert statement that's not wrapped in an if statement
+                    valueHash: the valueHash that was given as an input
+            notes:
+                -rawInsert (return value) is intended for use with sqlite
+                -insert (return value) is made for t-sql only
+                -values aren't sanitized
+                -query is built based on column names from "Get-AGColumnNames"
+        "Get-AGUpdateStatementBuilder" Creates an upsert-style statement for a given table from a hash table of values
+            params:
+                -valueHash @{}: a hash table where the key is the column name and the value is the column's value
+                -tableName [string]: table name to get information from
+                -dbName [string]: path to sqlite database file if needed
+                -lite [bool]: if the info is needed for a sqlite database
+                -existsConditional [string]: optional extra conditional for update statement. added as-is at the end of the "WHERE" portion of the update statement
+            returns:
+                a custom object with properties:
+                    update: the actual insert statement wrapped in the if statement
+                    rawUpdate: the insert statement that's not wrapped in an if statement
+                    valueHash: the valueHash that was given as an input
+            notes:
+                -rawUpdate (return value) is intended for use with sqlite
+                -update (return value) is made for t-sql
+                -values aren't sanitized
+                -query is built based on column names from "Get-AGColumnNames"
+
+EXAMPLES
+    Splitting the values from one data source passed in $valueHash over 3 different tables:
+        #I should probably check if any fields are in neither
+        $common = Get-AGInsertStatementBuilder -valueHash $valueHash -tableName "CDWCommon"
+        $other = Get-AGInsertStatementBuilder -valueHash $valueHash -tableName "CDWOther"
+        $class = Get-AGInsertStatementBuilder -valueHash $valueHash -tableName "CDWClassification"
+        $global:Error.clear()
+        $blank = sql -Query $common.insert
+        if($global:Error.Count -gt 0)
+        {
+           $common.insert >> $errorLogPath
+           [console]::beep(5000,500)
+           write-host ""
+        }
+        $global:Error.clear()
+        $blank = sql -Query $other.insert
+        if($global:Error.Count -gt 0)
+        {
+           $other.insert >> $errorLogPath
+           [console]::beep(5000,500)
+           write-host ""
+        }
+        $global:Error.clear()
+        $blank = sql -Query $class.insert
+        if($global:Error.Count -gt 0)
+        {
+           $other.insert >> $errorLogPath
+           [console]::beep(5000,500)
+           write-host ""
+        }
+    Updating the poRequester where the poRequester was not found previously. 
+        $existsConditional = ""
+        $newHash = @{} #$valueHash includes extra values which should not be updated
+        $newHash['CustomerPurchaseOrder'] = $valueHash['CustomerPurchaseOrder']
+        if($valueHash['poRequester'] -ne '' -AND $valueHash['poRequester'] -ne $null -AND $valueHash['poRequester'] -ne "notfound")
+        {
+            $existsConditional = "AND (poRequester = 'notfound' OR poRequester = '' OR poRequester IS NULL)"
+            $newHash['poRequester'] = $valueHash['poRequester']
+            $ticket = get-agUpdateStatementBuilder -valueHash $newHash -tableName "Ticket" -existsConditional $existsConditional
+            $global:Error.clear()
+            $blank = sql -Query $ticket.update
+            if($global:Error.Count -gt 0)
+            {
+                [console]::beep(5000,500)
+                $ticket.update >> $errorLogPath
+                write-host ""
+            }
+            (sql -query ("SELECT * FROM Ticket WHERE CustomerPurchaseOrder='" + $valueHash['CustomerPurchaseOrder'] + "'")) | Out-Host
+        }
+
+KEYWORDS
+    
